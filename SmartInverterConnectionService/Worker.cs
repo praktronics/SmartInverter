@@ -206,8 +206,8 @@ namespace SmartInverterConnectionService
                 //Thread.Sleep(period);
                 await Task.Delay(period);
 
-                // if we have a message and it is complete
-                if ((sm != null) && sm.ReceiveComplete)
+                // if we have a message and it is complete and it's valid
+                if ((sm != null) && sm.ReceiveComplete && sm.IsValidMessage)
                 {
                     noresponsecount = 0; // reset the non-response count
 

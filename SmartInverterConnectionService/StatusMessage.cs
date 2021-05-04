@@ -57,6 +57,9 @@ namespace SmartInverterConnectionService
             DCCurrentShort = (short)((Rawdata[17] << 8) | Rawdata[18]);
             ACVoltageShort = (short)((Rawdata[19] << 8) | Rawdata[20]);
             ACCurrentShort = (short)((Rawdata[21] << 8) | Rawdata[22]);
+
+            if ((DCVoltageShort >= 0) && (DCCurrentShort >= 0) && (ACVoltageShort >= 0) && (ACCurrentShort >= 0)) IsValidMessage = true; 
+
             //Console.WriteLine("Raw[15]: {0}, Raw[16]{1}, Temp = {2}", Rawdata[15], Rawdata[16], tmp);
 
         }
