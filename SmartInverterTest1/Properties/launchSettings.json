@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "SmartInverterTest1": {
+      "commandName": "Project",
+      "commandLineArgs": "run -u com5"
+    }
+  }
+}
