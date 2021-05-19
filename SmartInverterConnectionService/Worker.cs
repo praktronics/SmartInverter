@@ -22,6 +22,7 @@ namespace SmartInverterConnectionService
         private StatusMessage currentMessage;
         private FileStream stateFile = null;
         private ServiceState serviceState = null;
+        private Dictionary<string, Inverter> inverters;
         DateTime loadtime = DateTime.Now;
 
         public Worker(ILogger<Worker> logger)
@@ -52,6 +53,14 @@ namespace SmartInverterConnectionService
                 StopBits = StopBits.One
             };
             serialPort.DataReceived += SerialPort_DataReceived;
+
+            // create the dictionary of inverters
+            inverters = new Dictionary<string, Inverter>();
+            foreach (string inv in appSettings.inverters)
+            {
+                inverters.Add(inv, new Inverter() { Id = inv }) ;
+            }
+
 
             // open the state file
             try
@@ -163,15 +172,15 @@ namespace SmartInverterConnectionService
 
             if (serviceState == null) return ReadLoopResult.NullServiceState;
                  
-            byte[] buf = StatusMessage.BuildRequest(appSettings.radio, appSettings.inverters[0]);  // todo - make it handle multiple inverters
+            
             byte[] inbuf = null;
             StatusMessage sm = null ;
-            int period = 5000;
-            int noresponsecount = 0;
+            int period = appSettings.readperiod;
+            //int noresponsecount = 0;
             //StringBuilder sb = new StringBuilder();
             //double energy = 0.0;
-            double dcenergy = 0.0;
-            StatusMessage? previous = null;
+            //double dcenergy = 0.0;
+            //StatusMessage? previous = null;
             System.IO.StreamWriter? file = null;
 
             // open the serial port
@@ -197,75 +206,90 @@ namespace SmartInverterConnectionService
             while (DateTime.Now < loopuntil && !stoppingToken.IsCancellationRequested)
             {
 
-                // todo - add a loop around this for each inverter
-
-                // request data from the inverter 
-                sm = new StatusMessage() { StatusTime = DateTime.Now };
-                currentMessage = sm;
-                serialPort.Write(buf, 0, 15); ;
-                //Thread.Sleep(period);
-                await Task.Delay(period);
-
-                // if we have a message and it is complete and it's valid
-                if ((sm != null) && sm.ReceiveComplete && sm.IsValidMessage)
+                // cycle through each inverter
+                foreach (Inverter inv in inverters.Values)
                 {
-                    noresponsecount = 0; // reset the non-response count
+                    byte[] buf = StatusMessage.BuildRequest(appSettings.radio, inv.Id);  // todo - make it handle multiple inverters
 
-                    inbuf = sm.Rawdata;
-                    //foreach (byte b in inbuf)
-                    //{
-                    //    sb.Append(b.ToString("X2"));
-                    //}
+                    // request data from the inverter 
+                    sm = new StatusMessage() { StatusTime = DateTime.Now };
+                    currentMessage = sm; // needed for the serial data received routine
+                    inv.CurrentMessage = sm;
+                    serialPort.Write(buf, 0, 15); ;
+                    //Thread.Sleep(period);
+                    await Task.Delay(period);
 
-                    if (previous != null)
+                    // if we have a message and it is complete and it's valid
+                    if ((sm != null) && sm.ReceiveComplete && sm.IsValidMessage)
                     {
-                        double secs = (sm.StatusTime - previous.StatusTime).TotalSeconds;
-                        serviceState.TotalEnergy += secs * 0.5 * (previous.ACVoltage * previous.ACCurrent + sm.ACVoltage * sm.ACCurrent);
-                        dcenergy += secs * 0.5 * (previous.DCVoltage * previous.DCCurrent + sm.DCVoltage * sm.DCCurrent);
+                        inv.NoResponseCount = 0; // reset the non-response count
+
+                        inbuf = sm.Rawdata;
+                        //foreach (byte b in inbuf)
+                        //{
+                        //    sb.Append(b.ToString("X2"));
+                        //}
+
+                        serviceState.TotalEnergy += inv.CalculateEnergy();
+
+
+                        string s = string.Format(
+                            "{0:HH:mm:ss}\t{1}\t{2}\t{3}\t{4:0.00}\t{5:0.00}\t{6}\t{7}\t{8:0.00}\t{9:0.00}\t{10:0.00}",
+                            sm.StatusTime,
+                            inv.Id,
+                            sm.DCVoltage,
+                            sm.DCCurrent,
+                            sm.DCVoltage * sm.DCCurrent,
+                            inv.TotalDCEnergy / 3600.0,
+                            sm.ACVoltage,
+                            sm.ACCurrent,
+                            sm.ACVoltage * sm.ACCurrent,
+                            inv.TotalACEnergy / 3600.0,
+                            serviceState.TotalEnergy / 3600.0
+                            ) ;
+
+                        //Console.WriteLine(s);
+                        if (file != null)
+                        {
+                            await file.WriteLineAsync(s);
+                            await file.FlushAsync();
+                        }
+
+                        if (stateFile != null)
+                        {
+                            serviceState.StateTime = DateTime.Now;
+                            serviceState.LastMessage = sm;
+                            await serviceState.SaveToFileAsync(stateFile);
+                        }
+
+                        inv.LastMessage = sm;
+
+                        //sb.Clear();
                     }
-
-                    string s = string.Format(
-                        "{0:HH:mm:ss}\t{1}\t{2}\t{3:0.00}\t{4:0.00}\t{5}\t{6}\t{7:0.00}\t{8:0.00}",
-                        sm.StatusTime,
-                        //sb.ToString(),
-                        sm.DCVoltage,
-                        sm.DCCurrent,
-                        sm.DCVoltage * sm.DCCurrent,
-                        dcenergy / 3600.0,
-                        sm.ACVoltage,
-                        sm.ACCurrent,
-                        sm.ACVoltage * sm.ACCurrent,
-                        serviceState.TotalEnergy / 3600.0
-                        );
-
-                    //Console.WriteLine(s);
-                    if (file != null)
+                    else  // we didn't get a response or the message was incomplete
                     {
-                        await file.WriteLineAsync(s);
-                        await file.FlushAsync();
+                        ++inv.NoResponseCount;  // increment the non-response count
+                        if (inv.NoResponseCount > 4)
+                        {
+                            inv.ReadError = true;
+                            break;  // only gets us out of the foreach loop - and moves us to the next radio
+                        }
                     }
+                } // foreach
 
-                    if(stateFile != null)
-                    {
-                        serviceState.StateTime = DateTime.Now;
-                        serviceState.LastMessage = sm;
-                        await serviceState.SaveToFileAsync(stateFile);
-                    }
-
-                    previous = sm;
-
-                    //sb.Clear();
-                }
-                else  // we didn't get a response or the message was incomplete
+                // check if we are timing out on each inverter, if so, break
+                bool error = false;
+                foreach(Inverter invv in inverters.Values)
                 {
-                    ++noresponsecount;  // increment the non-response count
-                    if (noresponsecount > 4)
-                    {
-                        res = ReadLoopResult.RetryLimitExceeded;
-                        break;
-                    }
+                    error &= invv.ReadError; 
                 }
-            }
+                if(error)
+                {
+                    res = ReadLoopResult.RetryLimitExceeded;
+                    break;  
+                }
+
+            } // while
 
             serialPort.Close();
             if (file != null)
