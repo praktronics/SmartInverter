@@ -21,16 +21,18 @@ namespace SmartInverterConnectionService
 
         public double CalculateEnergy()
         {
+            double ACEnergy = 0.0;
+            
             if (LastMessage != null)
             {
                 double secs = (CurrentMessage.StatusTime - LastMessage.StatusTime).TotalSeconds;
-                TotalACEnergy += secs * 0.5 * (LastMessage.ACVoltage * LastMessage.ACCurrent + CurrentMessage.ACVoltage * CurrentMessage.ACCurrent);
+                TotalACEnergy += ACEnergy = secs * 0.5 * (LastMessage.ACVoltage * LastMessage.ACCurrent + CurrentMessage.ACVoltage * CurrentMessage.ACCurrent);
                 TotalDCEnergy += secs * 0.5 * (LastMessage.DCVoltage * LastMessage.DCCurrent + CurrentMessage.DCVoltage * CurrentMessage.DCCurrent);
 
             }
             else return 0.0;
 
-            return TotalACEnergy;
+            return ACEnergy;
         }
     }
 }
