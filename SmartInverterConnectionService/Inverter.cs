@@ -12,9 +12,9 @@ namespace SmartInverterConnectionService
         public StatusMessage LastMessage { get; set; } = null;
         public StatusMessage CurrentMessage { get; set; } = null;
         [JsonProperty]
-        public double TotalACEnergy { get; set; } = 0.0;
+        public double TotalACEnergy { get; private set; } = 0.0;
         [JsonProperty]
-        public double TotalDCEnergy { get; set; } = 0.0;
+        public double TotalDCEnergy { get; private set; } = 0.0;
         
         public int NoResponseCount = 0;
         public bool ReadError = false;
@@ -33,6 +33,14 @@ namespace SmartInverterConnectionService
             else return 0.0;
 
             return ACEnergy;
+        }
+
+        public void Reset()
+        {
+            TotalACEnergy = 0.0;
+            TotalDCEnergy = 0.0;
+            NoResponseCount = 0;
+            ReadError = false;
         }
     }
 }

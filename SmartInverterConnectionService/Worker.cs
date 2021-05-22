@@ -91,6 +91,12 @@ namespace SmartInverterConnectionService
                     _logger.LogInformation(string.Format($"Logging will run from {sunrise:HH:mm:ss} to {sunset:HH:mm:ss}"));
 
                     if (serviceState != null) serviceState.TotalEnergy = 0.0;  // reset the total energy for the day
+
+                    // reset the inverter counters
+                    foreach(Inverter inv in inverters.Values)
+                    {
+                        inv.Reset();
+                    }
                 }
 
                 
